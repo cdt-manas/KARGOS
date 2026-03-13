@@ -1,0 +1,17 @@
+{
+  "nodes": [
+    "Entrance",
+    "Corridor_A",
+    "Corridor_B",
+    "Library",
+    "Washroom",
+    "Stairs"
+  ],
+  "edges": [
+    ["Entrance", "Corridor_A", 10],
+    ["Corridor_A", "Corridor_B", 7],
+    ["Corridor_B", "Library", 5],
+    ["Corridor_B", "Washroom", 4],
+    ["Entrance", "Stairs", 12]
+  ]
+}
