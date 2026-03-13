@@ -132,6 +132,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 
   void _handleQRResult(String qrValue) async {
+      print("UI: Handling QR Result: $qrValue");
       if (!mapRepo.hasMap) {
         // Initial map loading
         if (qrValue.contains("BUILDING")) {

@@ -25,9 +25,8 @@ class YoloDetector {
     if (_interpreter == null || _labels == null) return [];
 
     try {
-      // 1. Convert YUV420 to RGB and Resize
-      final image = _convertCameraImage(frame);
-      final resizedImage = img.copyResize(image, width: 640, height: 640);
+      // 1. Convert YUV420 to RGB directly into a 640x640 buffer
+      final resizedImage = _convertCameraImage(frame);
 
       // 2. Prepare Input Tensor [1, 640, 640, 3]
       var input = _imageToByteListFloat32(resizedImage, 640);
@@ -64,12 +63,24 @@ class YoloDetector {
   img.Image _convertYUV420ToImage(CameraImage image) {
     final int width = image.width;
     final int height = image.height;
-    final img.Image buffer = img.Image(width: width, height: height);
+    
+    // Target 640x640 directly to avoid full conversion followed by resize
+    const int targetSize = 640;
+    final img.Image buffer = img.Image(width: targetSize, height: targetSize);
 
-    for (int y = 0; y < height; y++) {
-      for (int x = 0; x < width; x++) {
-        final int uvIndex = (y ~/ 2) * (width ~/ 2) + (x ~/ 2);
-        final int index = y * width + x;
+    final double skipX = width / targetSize;
+    final double skipY = height / targetSize;
+
+    for (int y = 0; y < targetSize; y++) {
+      for (int x = 0; x < targetSize; x++) {
+        final int srcX = (x * skipX).toInt();
+        final int srcY = (y * skipY).toInt();
+
+        final int uvIndex = (srcY ~/ 2) * (width ~/ 2) + (srcX ~/ 2);
+        final int index = srcY * width + srcX;
+
+        // Safety checks for buffer bounds
+        if (index >= image.planes[0].bytes.length || uvIndex >= image.planes[1].bytes.length) continue;
 
         final int yp = image.planes[0].bytes[index];
         final int up = image.planes[1].bytes[uvIndex];
@@ -79,6 +90,7 @@ class YoloDetector {
         int g = (yp - 0.344136 * (up - 128) - 0.714136 * (vp - 128)).toInt();
         int b = (yp + 1.772 * (up - 128)).toInt();
 
+        // Direct write to resized buffer
         buffer.setPixelRgb(x, y, r.clamp(0, 255), g.clamp(0, 255), b.clamp(0, 255));
       }
     }

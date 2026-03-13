@@ -19,18 +19,19 @@ class FrameProcessorPipeline {
   Future<void> processNewFrame(CameraImage frame, InputImageRotation rotation, Function(List<String> obstacles) onObstacleDetected, Function(String qrResult) onQrDetected) async {
     _frameCount++;
     
-    // Throttle frame processing to optimize mobile performance
-    if (_frameCount % processEveryNFrames == 0) {
-       // Run YOLO
+    // QR every 5 frames
+    if (_frameCount % 5 == 0) {
+       await qrDetector.processFrame(frame, rotation, (qr) {
+         onQrDetected(qr);
+       });
+    }
+
+    // YOLO every 15 frames (heavy lifting)
+    if (_frameCount % 15 == 0) {
        List<String> obstacles = await yoloDetector.detectObstacles(frame);
        if (obstacles.isNotEmpty) {
          onObstacleDetected(obstacles);
        }
-       
-       // Run QR
-       await qrDetector.processFrame(frame, rotation, (qr) {
-         onQrDetected(qr);
-       });
     }
   }
 }

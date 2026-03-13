@@ -12,6 +12,7 @@ class QRDetector {
       allBytes.putUint8List(plane.bytes);
     }
     final bytes = allBytes.done().buffer.asUint8List();
+    print("QR: Processing frame ${frame.width}x${frame.height}, rotation: $rotation");
 
     final InputImageMetadata metadata = InputImageMetadata(
       size: Size(frame.width.toDouble(), frame.height.toDouble()),
@@ -23,6 +24,9 @@ class QRDetector {
     final inputImage = InputImage.fromBytes(bytes: bytes, metadata: metadata);
 
     final List<Barcode> barcodes = await _barcodeScanner.processImage(inputImage);
+    if (barcodes.isNotEmpty) {
+      print("QR: Detected ${barcodes.length} barcodes");
+    }
 
     for (Barcode barcode in barcodes) {
       if (barcode.rawValue != null) {
