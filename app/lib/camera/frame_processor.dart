@@ -1,4 +1,5 @@
 import 'package:camera/camera.dart';
+import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart';
 
 import 'qr_detector.dart';
 import 'yolo_detector.dart';
@@ -15,7 +16,7 @@ class FrameProcessorPipeline {
     required this.yoloDetector,
   });
 
-  Future<void> processNewFrame(CameraImage frame, Function(List<String> obstacles) onObstacleDetected, Function(String qrResult) onQrDetected) async {
+  Future<void> processNewFrame(CameraImage frame, InputImageRotation rotation, Function(List<String> obstacles) onObstacleDetected, Function(String qrResult) onQrDetected) async {
     _frameCount++;
     
     // Throttle frame processing to optimize mobile performance
@@ -27,7 +28,7 @@ class FrameProcessorPipeline {
        }
        
        // Run QR
-       await qrDetector.processFrame(frame, (qr) {
+       await qrDetector.processFrame(frame, rotation, (qr) {
          onQrDetected(qr);
        });
     }

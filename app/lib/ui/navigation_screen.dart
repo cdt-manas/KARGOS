@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
+import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart';
 
 import '../alerts/voice_notifications.dart';
 import '../alerts/warning_system.dart';
@@ -110,11 +111,16 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
     try {
       await cameraController!.initialize();
+      
+      // Get rotation once or periodically
+      final rotation = _rotationFromSensor(cameras[0]);
+
       cameraController!.startImageStream((image) {
         if (_isProcessingFrame) return;
         _isProcessingFrame = true;
         frameProcessor.processNewFrame(
           image, 
+          rotation,
           (obstacles) => warningSystem.processDetectedObstacles(obstacles),
           (qr) => _handleQRResult(qr)
         ).then((_) => _isProcessingFrame = false);
@@ -179,6 +185,19 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             }
         }
       }
+  }
+
+  InputImageRotation _rotationFromSensor(CameraDescription camera) {
+    switch (camera.sensorOrientation) {
+      case 90:
+        return InputImageRotation.rotation90deg;
+      case 180:
+        return InputImageRotation.rotation180deg;
+      case 270:
+        return InputImageRotation.rotation270deg;
+      default:
+        return InputImageRotation.rotation0deg;
+    }
   }
 
   void _onVoiceButtonPressed() {

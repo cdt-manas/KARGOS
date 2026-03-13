@@ -2,12 +2,11 @@ import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:ui';
-import 'dart:typed_data';
 
 class QRDetector {
   final _barcodeScanner = BarcodeScanner();
 
-  Future<void> processFrame(CameraImage frame, Function(String) onDetected) async {
+  Future<void> processFrame(CameraImage frame, InputImageRotation rotation, Function(String) onDetected) async {
     final WriteBuffer allBytes = WriteBuffer();
     for (final Plane plane in frame.planes) {
       allBytes.putUint8List(plane.bytes);
@@ -16,7 +15,7 @@ class QRDetector {
 
     final InputImageMetadata metadata = InputImageMetadata(
       size: Size(frame.width.toDouble(), frame.height.toDouble()),
-      rotation: InputImageRotation.rotation0deg, // Adjust based on camera orientation if needed
+      rotation: rotation,
       format: InputImageFormatValue.fromRawValue(frame.format.raw) ?? InputImageFormat.yuv420,
       bytesPerRow: frame.planes[0].bytesPerRow,
     );
