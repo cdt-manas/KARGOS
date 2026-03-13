@@ -1,14 +1,38 @@
+import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart';
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart';
+import 'dart:ui';
+import 'dart:typed_data';
 
 class QRDetector {
-  /// We are using mobile_scanner in the UI directly as it provides a native
-  /// performant view and handles its own camera stream optimally.
-  /// However, if we were to process frames manually, we would use MLKit here.
-  /// For this hackathon structure, we will rely on mobile_scanner's built in callbacks
-  /// on the NavigationScreen.
-  
-  // This class acts as a stub for architectural completeness if migrating to raw MLKit frame processing later.
-  void processFrame(CameraImage frame, Function(String) onDetected) {
-     // MLKit decoding logic would go here.
+  final _barcodeScanner = BarcodeScanner();
+
+  Future<void> processFrame(CameraImage frame, Function(String) onDetected) async {
+    final WriteBuffer allBytes = WriteBuffer();
+    for (final Plane plane in frame.planes) {
+      allBytes.putUint8List(plane.bytes);
+    }
+    final bytes = allBytes.done().buffer.asUint8List();
+
+    final InputImageMetadata metadata = InputImageMetadata(
+      size: Size(frame.width.toDouble(), frame.height.toDouble()),
+      rotation: InputImageRotation.rotation0deg, // Adjust based on camera orientation if needed
+      format: InputImageFormatValue.fromRawValue(frame.format.raw) ?? InputImageFormat.yuv420,
+      bytesPerRow: frame.planes[0].bytesPerRow,
+    );
+
+    final inputImage = InputImage.fromBytes(bytes: bytes, metadata: metadata);
+
+    final List<Barcode> barcodes = await _barcodeScanner.processImage(inputImage);
+
+    for (Barcode barcode in barcodes) {
+      if (barcode.rawValue != null) {
+        onDetected(barcode.rawValue!);
+      }
+    }
+  }
+
+  void dispose() {
+    _barcodeScanner.close();
   }
 }

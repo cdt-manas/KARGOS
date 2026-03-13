@@ -15,19 +15,19 @@ class FrameProcessorPipeline {
     required this.yoloDetector,
   });
 
-  void processNewFrame(CameraImage frame, Function(List<String> obstacles) onObstacleDetected, Function(String qrResult) onQrDetected) {
+  Future<void> processNewFrame(CameraImage frame, Function(List<String> obstacles) onObstacleDetected, Function(String qrResult) onQrDetected) async {
     _frameCount++;
     
     // Throttle frame processing to optimize mobile performance
     if (_frameCount % processEveryNFrames == 0) {
        // Run YOLO
-       List<String> obstacles = yoloDetector.detectObstacles(frame);
+       List<String> obstacles = await yoloDetector.detectObstacles(frame);
        if (obstacles.isNotEmpty) {
          onObstacleDetected(obstacles);
        }
        
-       // Run QR (if manual parsing was active)
-       qrDetector.processFrame(frame, (qr) {
+       // Run QR
+       await qrDetector.processFrame(frame, (qr) {
          onQrDetected(qr);
        });
     }

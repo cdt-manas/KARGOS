@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:camera/camera.dart';
 
 import '../alerts/voice_notifications.dart';
 import '../alerts/warning_system.dart';
@@ -14,6 +14,9 @@ import '../voice/speech_to_text.dart';
 import '../voice/text_to_speech.dart';
 import '../voice/voice_command_handler.dart';
 
+import '../camera/frame_processor.dart';
+import '../camera/qr_detector.dart';
+import '../camera/yolo_detector.dart';
 import 'camera_view.dart';
 import 'voice_button.dart';
 
@@ -47,9 +50,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _nextPathIndex = 0;
 
   // Camera
-  final MobileScannerController scannerController = MobileScannerController(
-    detectionSpeed: DetectionSpeed.noDuplicates,
-  );
+  CameraController? cameraController;
+  late FrameProcessorPipeline frameProcessor;
+  late YoloDetector yoloDetector;
+  late QRDetector qrDetector;
+  bool _isProcessingFrame = false;
 
   @override
   void initState() {
@@ -79,24 +84,56 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     final routeEngine = RouteEngine();
     pathPlanner = PathPlanner(aStar: aStar, routeEngine: routeEngine);
 
+    // 4. Camera & AI
+    yoloDetector = YoloDetector();
+    await yoloDetector.loadModel();
+    qrDetector = QRDetector();
+    frameProcessor = FrameProcessorPipeline(
+      qrDetector: qrDetector,
+      yoloDetector: yoloDetector,
+    );
+    await _initializeCamera();
+
     // Welcome Message
     voiceAlerts.queueNotification("Welcome. Please scan a building Entrance QR code to load the map.");
   }
 
-  void _onQRDetected(BarcodeCapture capture) async {
-    final List<Barcode> barcodes = capture.barcodes;
-    for (final barcode in barcodes) {
-      String? rawValue = barcode.rawValue;
-      if (rawValue == null) continue;
+  Future<void> _initializeCamera() async {
+    final cameras = await availableCameras();
+    if (cameras.isEmpty) return;
 
+    cameraController = CameraController(
+      cameras[0],
+      ResolutionPreset.medium,
+      enableAudio: false,
+    );
+
+    try {
+      await cameraController!.initialize();
+      cameraController!.startImageStream((image) {
+        if (_isProcessingFrame) return;
+        _isProcessingFrame = true;
+        frameProcessor.processNewFrame(
+          image, 
+          (obstacles) => warningSystem.processDetectedObstacles(obstacles),
+          (qr) => _handleQRResult(qr)
+        ).then((_) => _isProcessingFrame = false);
+      });
+      setState(() {});
+    } catch (e) {
+      print("Camera initialization error: $e");
+    }
+  }
+
+  void _handleQRResult(String qrValue) async {
       if (!mapRepo.hasMap) {
         // Initial map loading
-        if (rawValue.contains("BUILDING")) {
+        if (qrValue.contains("BUILDING")) {
           setState(() => currentStatusText = "Loading Map...");
-          await mapLoader.loadMapFromQR(rawValue);
+          await mapLoader.loadMapFromQR(qrValue);
           
           if (mapRepo.hasMap) {
-             positionTracker.updatePosition("Entrance"); // default assumption for hackathon
+             positionTracker.updatePosition("Entrance"); 
              _lastAnnouncedNode = "Entrance";
              setState(() => currentStatusText = "Map Loaded. Current Location: Entrance.");
              voiceAlerts.queueNotification("Map loaded. You are at the Entrance. Press the button and tell the desired place you want to go.");
@@ -104,7 +141,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         }
       } else {
         // Continuous Localization
-        qrManager.processQRData(rawValue);
+        qrManager.processQRData(qrValue);
         final currentNode = positionTracker.currentNode;
         if (currentNode != null) {
             setState(() {
@@ -142,7 +179,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             }
         }
       }
-    }
   }
 
   void _onVoiceButtonPressed() {
@@ -210,7 +246,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   @override
   void dispose() {
-    scannerController.dispose();
+    cameraController?.dispose();
+    qrDetector.dispose();
     ttsWrapper.stop();
     sttWrapper.stopListening();
     super.dispose();
@@ -225,8 +262,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           // Background Camera View
           Positioned.fill(
             child: CameraView(
-              controller: scannerController,
-              onDetect: _onQRDetected,
+              controller: cameraController,
             ),
           ),
           

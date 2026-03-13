@@ -1,27 +1,19 @@
 import 'package:flutter/material.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:camera/camera.dart';
 
 class CameraView extends StatelessWidget {
-  final MobileScannerController controller;
-  final Function(BarcodeCapture) onDetect;
+  final CameraController? controller;
 
   const CameraView({
     Key? key,
     required this.controller,
-    required this.onDetect,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return MobileScanner(
-      controller: controller,
-      onDetect: onDetect,
-      errorBuilder: (context, error) {
-         return Center(
-           child: Text("Camera error: ${error.errorCode}"),
-         );
-      },
-      fit: BoxFit.cover,
-    );
+    if (controller == null || !controller!.value.isInitialized) {
+      return Container(color: Colors.black, child: const Center(child: CircularProgressIndicator()));
+    }
+    return CameraPreview(controller!);
   }
 }
