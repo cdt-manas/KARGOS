@@ -43,4 +43,12 @@ class GraphModel {
   bool isValidNode(String node) {
     return nodes.contains(node);
   }
+
+  double? getDistance(String from, String to) {
+    if (!adjacencyList.containsKey(from)) return null;
+    for (var edge in adjacencyList[from]!) {
+      if (edge.to == to) return edge.distance;
+    }
+    return null;
+  }
 }

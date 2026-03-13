@@ -124,9 +124,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                    
                    if (_nextPathIndex < _activePath!.length) {
                      // Give NEXT instruction
+                     final nextNode = _activePath![_nextPathIndex];
+                     final distance = mapRepo.currentGraph?.getDistance(currentNode, nextNode);
                      final instr = pathPlanner.routeEngine.getInstructionForStep(
                        currentNode, 
-                       _activePath![_nextPathIndex]
+                       nextNode,
+                       distance
                      );
                      voiceAlerts.queueNotification(instr);
                    } else {
@@ -188,7 +191,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
            voiceAlerts.queueNotification(pathPlanner.routeEngine.getRouteSummary(rawPath));
            
            // 2. First Instruction
-           voiceAlerts.queueNotification(pathPlanner.routeEngine.getInstructionForStep(rawPath[0], rawPath[1]));
+           final firstDistance = mapRepo.currentGraph?.getDistance(rawPath[0], rawPath[1]);
+           voiceAlerts.queueNotification(pathPlanner.routeEngine.getInstructionForStep(rawPath[0], rawPath[1], firstDistance));
          }
        } else {
          voiceAlerts.queueNotification("Current location unknown. Scan a QR anchor.");

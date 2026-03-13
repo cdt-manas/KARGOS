@@ -13,8 +13,9 @@ class RouteEngine {
   }
 
   /// Returns a specific instruction for moving from current node to the next in the path
-  String getInstructionForStep(String current, String next) {
-    return "Walk straight towards ${next.replaceAll('_', ' ')}.";
+  String getInstructionForStep(String current, String next, [double? distance]) {
+    String distanceStr = distance != null ? " for ${distance.toInt()} steps" : "";
+    return "Walk straight towards ${next.replaceAll('_', ' ')}$distanceStr.";
   }
 
   /// Original method maintained for backward compatibility if needed, but improved phrasing
