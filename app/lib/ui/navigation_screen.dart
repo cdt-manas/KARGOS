@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:camera/camera.dart';
 
 import '../alerts/voice_notifications.dart';
 import '../alerts/warning_system.dart';
@@ -14,6 +15,7 @@ import '../voice/speech_to_text.dart';
 import '../voice/text_to_speech.dart';
 import '../voice/voice_command_handler.dart';
 
+import '../camera/yolo_detector.dart';
 import 'voice_button.dart';
 
 class MainNavigationScreen extends StatefulWidget {
@@ -48,6 +50,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   // QR Scanner
   MobileScannerController? scannerController;
 
+  // YOLO Detector (runs on a separate camera stream)
+  late YoloDetector yoloDetector;
+  CameraController? _yoloCameraController;
+  bool _isYoloProcessing = false;
+  int _yoloFrameCount = 0;
+
   @override
   void initState() {
     super.initState();
@@ -76,15 +84,56 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     final routeEngine = RouteEngine();
     pathPlanner = PathPlanner(aStar: aStar, routeEngine: routeEngine);
 
-    // 4. QR Scanner
+    // 4. QR Scanner (MobileScanner — proven reliable)
     scannerController = MobileScannerController(
       detectionSpeed: DetectionSpeed.normal,
       facing: CameraFacing.back,
     );
 
+    // 5. YOLO Detector
+    yoloDetector = YoloDetector();
+    await yoloDetector.loadModel();
+    await _initYoloCamera();
+
     // Welcome Message
     voiceAlerts.queueNotification("Welcome. Please scan a building Entrance QR code to load the map.");
     setState(() {});
+  }
+
+  Future<void> _initYoloCamera() async {
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) return;
+
+      _yoloCameraController = CameraController(
+        cameras[0],
+        ResolutionPreset.low, // Low res is enough for YOLO 320x320
+        enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.yuv420,
+      );
+      await _yoloCameraController!.initialize();
+      _yoloCameraController!.startImageStream(_onYoloFrame);
+    } catch (e) {
+      print("YOLO camera init error: $e");
+    }
+  }
+
+  void _onYoloFrame(CameraImage image) {
+    _yoloFrameCount++;
+    // Process every 20th frame to save CPU
+    if (_yoloFrameCount % 20 != 0) return;
+    if (_isYoloProcessing) return;
+
+    _isYoloProcessing = true;
+    yoloDetector.detectObstacles(image).then((obstacles) {
+      if (obstacles.isNotEmpty) {
+        warningSystem.processDetectedObstacles(obstacles);
+      }
+      _isYoloProcessing = false;
+    }).catchError((e) {
+      print("YOLO detection error: $e");
+      _isYoloProcessing = false;
+    });
   }
 
   void _onQRDetected(BarcodeCapture capture) {
@@ -122,16 +171,13 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             if (currentNode != _lastAnnouncedNode) {
                _lastAnnouncedNode = currentNode;
                
-               // 1. Announce immediate arrival
                voiceAlerts.queueNotification("You have reached ${currentNode.replaceAll('_', ' ')}.");
 
-               // 2. Check if we are on a path
                if (_activePath != null && _nextPathIndex < _activePath!.length) {
                  if (currentNode == _activePath![_nextPathIndex]) {
                    _nextPathIndex++;
                    
                    if (_nextPathIndex < _activePath!.length) {
-                     // Give NEXT instruction
                      final nextNode = _activePath![_nextPathIndex];
                      final distance = mapRepo.currentGraph?.getDistance(currentNode, nextNode);
                      final instr = pathPlanner.routeEngine.getInstructionForStep(
@@ -141,7 +187,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                      );
                      voiceAlerts.queueNotification(instr);
                    } else {
-                     // Destination Reached
                      voiceAlerts.queueNotification("You have reached your destination.");
                      _activePath = null;
                    }
@@ -194,10 +239,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
              currentStatusText = "Navigating to $dest";
            });
 
-           // 1. Route Summary
            voiceAlerts.queueNotification(pathPlanner.routeEngine.getRouteSummary(rawPath));
            
-           // 2. First Instruction
            final firstDistance = mapRepo.currentGraph?.getDistance(rawPath[0], rawPath[1]);
            voiceAlerts.queueNotification(pathPlanner.routeEngine.getInstructionForStep(rawPath[0], rawPath[1], firstDistance));
          }
@@ -218,6 +261,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   @override
   void dispose() {
     scannerController?.dispose();
+    _yoloCameraController?.dispose();
     ttsWrapper.stop();
     sttWrapper.stopListening();
     super.dispose();
@@ -229,7 +273,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // Background Camera/Scanner View
+          // Background QR Scanner (MobileScanner — primary camera feed)
           Positioned.fill(
             child: scannerController != null
               ? MobileScanner(
@@ -239,7 +283,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               : const Center(child: CircularProgressIndicator()),
           ),
           
-          // Debug / Status Info Layer
+          // Status Info Layer
           Positioned(
             top: 60,
             left: 20,
