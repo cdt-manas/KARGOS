@@ -42,6 +42,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   String lastUserCommand = "";
   String? _lastAnnouncedNode;
 
+  // Navigation Session
+  List<String>? _activePath;
+  int _nextPathIndex = 0;
+
   // Camera
   final MobileScannerController scannerController = MobileScannerController(
     detectionSpeed: DetectionSpeed.noDuplicates,
@@ -109,7 +113,29 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             
             if (currentNode != _lastAnnouncedNode) {
                _lastAnnouncedNode = currentNode;
+               
+               // 1. Announce immediate arrival
                voiceAlerts.queueNotification("You have reached ${currentNode.replaceAll('_', ' ')}.");
+
+               // 2. Check if we are on a path
+               if (_activePath != null && _nextPathIndex < _activePath!.length) {
+                 if (currentNode == _activePath![_nextPathIndex]) {
+                   _nextPathIndex++;
+                   
+                   if (_nextPathIndex < _activePath!.length) {
+                     // Give NEXT instruction
+                     final instr = pathPlanner.routeEngine.getInstructionForStep(
+                       currentNode, 
+                       _activePath![_nextPathIndex]
+                     );
+                     voiceAlerts.queueNotification(instr);
+                   } else {
+                     // Destination Reached
+                     voiceAlerts.queueNotification("You have reached your destination.");
+                     _activePath = null;
+                   }
+                 }
+               }
             }
         }
       }
@@ -145,12 +171,25 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
          return;
        }
        if (positionTracker.hasPosition) {
-         List<String> instructions = pathPlanner.planRouteAndGetInstructions(positionTracker.currentNode!, dest);
+         List<String> rawPath = pathPlanner.findPath(positionTracker.currentNode!, dest);
          
-         for (String step in instructions) {
-            voiceAlerts.queueNotification(step);
+         if (rawPath.isEmpty) {
+           voiceAlerts.queueNotification("I couldn't find a path to $dest.");
+         } else if (rawPath.length == 1) {
+           voiceAlerts.queueNotification("You are already at the ${dest.replaceAll('_', ' ')}.");
+         } else {
+           setState(() {
+             _activePath = rawPath;
+             _nextPathIndex = 1;
+             currentStatusText = "Navigating to $dest";
+           });
+
+           // 1. Route Summary
+           voiceAlerts.queueNotification(pathPlanner.routeEngine.getRouteSummary(rawPath));
+           
+           // 2. First Instruction
+           voiceAlerts.queueNotification(pathPlanner.routeEngine.getInstructionForStep(rawPath[0], rawPath[1]));
          }
-         setState(() => currentStatusText = "Navigating to $dest");
        } else {
          voiceAlerts.queueNotification("Current location unknown. Scan a QR anchor.");
        }

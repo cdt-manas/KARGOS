@@ -1,20 +1,35 @@
 class RouteEngine {
   /// Converts a path of nodes into step-by-step spoken commands
   /// Example input path: ['Entrance', 'Corridor_A', 'Library']
+  /// Provides a high-level summary of the route
+  String getRouteSummary(List<String> path) {
+    if (path.isEmpty) return "No route available.";
+    if (path.length == 1) return "You are already there.";
+    
+    final destination = path.last.replaceAll('_', ' ');
+    if (path.length == 2) return "Heading to $destination.";
+    
+    return "Route planned to $destination. Passing through ${path.skip(1).take(path.length - 2).map((e) => e.replaceAll('_', ' ')).join(', ')}.";
+  }
+
+  /// Returns a specific instruction for moving from current node to the next in the path
+  String getInstructionForStep(String current, String next) {
+    return "Walk straight towards ${next.replaceAll('_', ' ')}.";
+  }
+
+  /// Original method maintained for backward compatibility if needed, but improved phrasing
   List<String> generateInstructions(List<String> path) {
     if (path.isEmpty) return ["No valid path found."];
     if (path.length == 1) return ["You are already at your destination."];
 
     List<String> instructions = [];
-    instructions.add("Walk straight towards ${path[1].replaceAll('_', ' ')}.");
-
-    for (int i = 1; i < path.length - 1; i++) {
-        // Logic will need to depend on orientation/magnetometer for actual "Turn Left/Right"
-        // For a simulated graph MVP without compass parsing, we announce node progression
-        instructions.add("From ${path[i].replaceAll('_', ' ')}, head towards ${path[i+1].replaceAll('_', ' ')}.");
+    instructions.add(getRouteSummary(path));
+    
+    for (int i = 0; i < path.length - 1; i++) {
+        instructions.add("Step ${i + 1}: From ${path[i].replaceAll('_', ' ')}, ${getInstructionForStep(path[i], path[i+1])}");
     }
     
-    instructions.add("Destination reached: ${path.last.replaceAll('_', ' ')}.");
+    instructions.add("You have reached your destination: ${path.last.replaceAll('_', ' ')}.");
     return instructions;
   }
 }

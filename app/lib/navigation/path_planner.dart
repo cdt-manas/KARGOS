@@ -11,4 +11,8 @@ class PathPlanner {
     var rawPath = aStar.findPath(start, destination);
     return routeEngine.generateInstructions(rawPath);
   }
+
+  List<String> findPath(String start, String destination) {
+    return aStar.findPath(start, destination);
+  }
 }
