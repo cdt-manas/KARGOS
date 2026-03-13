@@ -49,8 +49,10 @@ class YoloDetector {
   img.Image _convertCameraImage(CameraImage image) {
     if (image.format.group == ImageFormatGroup.yuv420) {
       return _convertYUV420ToImage(image);
+    } else if (image.format.group == ImageFormatGroup.bgra8888) {
+      return _convertBGRAToImage(image);
     } else {
-      // BGRA or other formats for iOS
+      // Fallback for other formats
       return img.Image.fromBytes(
         width: image.width,
         height: image.height,
@@ -60,13 +62,53 @@ class YoloDetector {
     }
   }
 
-  img.Image _convertYUV420ToImage(CameraImage image) {
+  img.Image _convertBGRAToImage(CameraImage image) {
     final int width = image.width;
     final int height = image.height;
-    
-    // Target 640x640 directly to avoid full conversion followed by resize
     const int targetSize = 640;
     final img.Image buffer = img.Image(width: targetSize, height: targetSize);
+
+    final double skipX = width / targetSize;
+    final double skipY = height / targetSize;
+
+    final plane = image.planes[0];
+    final int bytesPerRow = plane.bytesPerRow;
+    final Uint8List bytes = plane.bytes;
+
+    for (int y = 0; y < targetSize; y++) {
+      for (int x = 0; x < targetSize; x++) {
+        final int srcX = (x * skipX).toInt();
+        final int srcY = (y * skipY).toInt();
+
+        // BGRA: 4 bytes per pixel, but respect bytesPerRow
+        final int index = (srcY * bytesPerRow) + (srcX * 4);
+
+        if (index + 2 >= bytes.length) continue;
+
+        final int b = bytes[index];
+        final int g = bytes[index + 1];
+        final int r = bytes[index + 2];
+
+        buffer.setPixelRgb(x, y, r, g, b);
+      }
+    }
+    return buffer;
+  }
+
+  img.Image _convertYUV420ToImage(CameraImage image) {
+    const int targetSize = 640;
+    final img.Image buffer = img.Image(width: targetSize, height: targetSize);
+
+    final int width = image.width;
+    final int height = image.height;
+
+    final planeY = image.planes[0];
+    final planeU = image.planes[1];
+    final planeV = image.planes[2];
+
+    final int yRowStride = planeY.bytesPerRow;
+    final int uvRowStride = planeU.bytesPerRow;
+    final int uvPixelStride = planeU.bytesPerPixel!;
 
     final double skipX = width / targetSize;
     final double skipY = height / targetSize;
@@ -76,21 +118,24 @@ class YoloDetector {
         final int srcX = (x * skipX).toInt();
         final int srcY = (y * skipY).toInt();
 
-        final int uvIndex = (srcY ~/ 2) * (width ~/ 2) + (srcX ~/ 2);
-        final int index = srcY * width + srcX;
+        // Handle Y plane with row stride
+        final int yIndex = srcY * yRowStride + srcX;
+        
+        // Handle UV planes with row stride and pixel stride (chroma subsampling 2x2)
+        final int uvX = srcX ~/ 2;
+        final int uvY = srcY ~/ 2;
+        final int uvIndex = (uvY * uvRowStride) + (uvX * uvPixelStride);
 
-        // Safety checks for buffer bounds
-        if (index >= image.planes[0].bytes.length || uvIndex >= image.planes[1].bytes.length) continue;
+        if (yIndex >= planeY.bytes.length || uvIndex >= planeU.bytes.length) continue;
 
-        final int yp = image.planes[0].bytes[index];
-        final int up = image.planes[1].bytes[uvIndex];
-        final int vp = image.planes[2].bytes[uvIndex];
+        final int yp = planeY.bytes[yIndex];
+        final int up = planeU.bytes[uvIndex];
+        final int vp = planeV.bytes[uvIndex];
 
         int r = (yp + 1.402 * (vp - 128)).toInt();
         int g = (yp - 0.344136 * (up - 128) - 0.714136 * (vp - 128)).toInt();
         int b = (yp + 1.772 * (up - 128)).toInt();
 
-        // Direct write to resized buffer
         buffer.setPixelRgb(x, y, r.clamp(0, 255), g.clamp(0, 255), b.clamp(0, 255));
       }
     }

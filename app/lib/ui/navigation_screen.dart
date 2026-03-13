@@ -118,12 +118,26 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       cameraController!.startImageStream((image) {
         if (_isProcessingFrame) return;
         _isProcessingFrame = true;
-        frameProcessor.processNewFrame(
-          image, 
-          rotation,
-          (obstacles) => warningSystem.processDetectedObstacles(obstacles),
-          (qr) => _handleQRResult(qr)
-        ).then((_) => _isProcessingFrame = false);
+        
+        try {
+          frameProcessor.processNewFrame(
+            image, 
+            rotation,
+            (obstacles) => warningSystem.processDetectedObstacles(obstacles),
+            (qr) {
+               print("UI: QR Recognized: $qr");
+               _handleQRResult(qr);
+            }
+          ).then((_) {
+             _isProcessingFrame = false;
+          }).catchError((e) {
+             print("Pipeline Error: $e");
+             _isProcessingFrame = false;
+          });
+        } catch (e) {
+          print("Stream Error: $e");
+          _isProcessingFrame = false;
+        }
       });
       setState(() {});
     } catch (e) {
