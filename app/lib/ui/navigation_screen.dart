@@ -16,7 +16,6 @@ import '../voice/text_to_speech.dart';
 import '../voice/voice_command_handler.dart';
 
 import '../camera/qr_detector.dart';
-import '../camera/yolo_detector.dart';
 import 'camera_view.dart';
 import 'voice_button.dart';
 
@@ -26,7 +25,6 @@ class MainNavigationScreen extends StatefulWidget {
 }
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
-  // Services
   late TTSWrapper ttsWrapper;
   late STTWrapper sttWrapper;
   late VoiceNotifications voiceAlerts;
@@ -39,20 +37,17 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   late QRAnchorManager qrManager;
   late PathPlanner pathPlanner;
 
-  // UI State
   bool isListening = false;
-  String currentStatusText = "Scanning for Building Entrance QR...";
+  String currentStatusText = "Point camera at Building Entrance QR code...";
   String lastUserCommand = "";
   String? _lastAnnouncedNode;
+  String _lastQRSeen = "";
 
-  // Navigation Session
   List<String>? _activePath;
   int _nextPathIndex = 0;
 
-  // Unified Camera
   CameraController? cameraController;
   late QRDetector qrDetector;
-  late YoloDetector yoloDetector;
 
   bool _isProcessing = false;
   int _frameCount = 0;
@@ -78,18 +73,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     qrManager = QRAnchorManager(mapRepository: mapRepo, positionTracker: positionTracker);
 
     final aStar = AStarAlgorithm(mapRepository: mapRepo);
-    final routeEngine = RouteEngine();
-    pathPlanner = PathPlanner(aStar: aStar, routeEngine: routeEngine);
+    pathPlanner = PathPlanner(aStar: aStar, routeEngine: RouteEngine());
 
     qrDetector = QRDetector();
-
-    yoloDetector = YoloDetector();
-    await yoloDetector.loadModel();
 
     await _initCamera();
 
     voiceAlerts.queueNotification(
-      "Welcome. Please scan a building Entrance QR code to load the map.",
+      "Welcome. Please scan the building entrance Q R code to begin.",
     );
   }
 
@@ -105,17 +96,24 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     );
 
     await cameraController!.initialize();
-
     final rotation = _rotationFromSensor(cameras[0]);
 
     cameraController!.startImageStream((image) {
       _frameCount++;
+      // Only run QR every 5th frame
+      if (_frameCount % 5 != 0) return;
       if (_isProcessing) return;
       _isProcessing = true;
 
-      _processFrame(image, rotation).then((_) {
+      qrDetector.processFrame(image, rotation, (qr) {
+        // Debounce: only handle if QR value changed
+        if (qr != _lastQRSeen) {
+          _lastQRSeen = qr;
+          _handleQRResult(qr);
+        }
+      }).then((_) {
         _isProcessing = false;
-      }).catchError((e) {
+      }).catchError((_) {
         _isProcessing = false;
       });
     });
@@ -123,49 +121,31 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     setState(() {});
   }
 
-  Future<void> _processFrame(CameraImage image, InputImageRotation rotation) async {
-    // QR every 5 frames
-    if (_frameCount % 5 == 0) {
-      await qrDetector.processFrame(image, rotation, (qr) {
-        _handleQRResult(qr);
-      });
-    }
-
-    // YOLO every 20 frames
-    if (_frameCount % 20 == 0) {
-      final obstacles = await yoloDetector.detectObstacles(image);
-      if (obstacles.isNotEmpty) {
-        warningSystem.processDetectedObstacles(obstacles);
-      }
-    }
-  }
-
   InputImageRotation _rotationFromSensor(CameraDescription camera) {
     switch (camera.sensorOrientation) {
-      case 90:
-        return InputImageRotation.rotation90deg;
-      case 180:
-        return InputImageRotation.rotation180deg;
-      case 270:
-        return InputImageRotation.rotation270deg;
-      default:
-        return InputImageRotation.rotation0deg;
+      case 90:  return InputImageRotation.rotation90deg;
+      case 180: return InputImageRotation.rotation180deg;
+      case 270: return InputImageRotation.rotation270deg;
+      default:  return InputImageRotation.rotation0deg;
     }
   }
 
   void _handleQRResult(String qrValue) async {
     if (!mapRepo.hasMap) {
       if (qrValue.contains("BUILDING")) {
-        setState(() => currentStatusText = "Loading Map...");
+        setState(() => currentStatusText = "QR Found! Loading map...");
+        voiceAlerts.queueNotification("QR code detected. Loading map.");
         await mapLoader.loadMapFromQR(qrValue);
         if (mapRepo.hasMap) {
           positionTracker.updatePosition("Entrance");
           _lastAnnouncedNode = "Entrance";
-          setState(() => currentStatusText = "Map Loaded. Location: Entrance.");
+          setState(() => currentStatusText = "Map Loaded. You are at: Entrance");
           voiceAlerts.queueNotification(
-            "Map loaded. You are at the Entrance. Press the button to navigate.",
+            "Map loaded. You are at the Entrance. Press the button and say where you want to go.",
           );
         }
+      } else {
+        setState(() => currentStatusText = "QR seen: $qrValue (need BUILDING QR)");
       }
     } else {
       qrManager.processQRData(qrValue);
@@ -174,21 +154,19 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         setState(() => currentStatusText = "Location: ${currentNode.replaceAll('_', ' ')}");
         if (currentNode != _lastAnnouncedNode) {
           _lastAnnouncedNode = currentNode;
-          voiceAlerts.queueNotification(
-            "You have reached ${currentNode.replaceAll('_', ' ')}.",
-          );
+          voiceAlerts.queueNotification("You have reached ${currentNode.replaceAll('_', ' ')}.");
           if (_activePath != null && _nextPathIndex < _activePath!.length) {
             if (currentNode == _activePath![_nextPathIndex]) {
               _nextPathIndex++;
               if (_nextPathIndex < _activePath!.length) {
                 final nextNode = _activePath![_nextPathIndex];
                 final distance = mapRepo.currentGraph?.getDistance(currentNode, nextNode);
-                final instr = pathPlanner.routeEngine.getInstructionForStep(
-                  currentNode, nextNode, distance,
+                voiceAlerts.queueNotification(
+                  pathPlanner.routeEngine.getInstructionForStep(currentNode, nextNode, distance),
                 );
-                voiceAlerts.queueNotification(instr);
               } else {
                 voiceAlerts.queueNotification("You have reached your destination.");
+                setState(() => currentStatusText = "Destination reached!");
                 _activePath = null;
               }
             }
@@ -203,15 +181,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       sttWrapper.stopListening();
       setState(() => isListening = false);
     } else {
-      setState(() {
-        isListening = true;
-        currentStatusText = "Listening...";
-      });
+      setState(() { isListening = true; currentStatusText = "Listening..."; });
       sttWrapper.startListening((words) {
-        setState(() {
-          lastUserCommand = words;
-          isListening = false;
-        });
+        setState(() { lastUserCommand = words; isListening = false; });
         _processCommand(words);
       });
     }
@@ -221,41 +193,23 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     final result = commandHandler.parseCommand(command);
     if (result['intent'] == 'navigate') {
       final dest = result['destination']!;
-      if (dest.isEmpty) {
-        voiceAlerts.queueNotification("Sorry, I didn't catch the destination.");
-        return;
-      }
-      if (positionTracker.hasPosition) {
-        final rawPath = pathPlanner.findPath(positionTracker.currentNode!, dest);
-        if (rawPath.isEmpty) {
-          voiceAlerts.queueNotification("I couldn't find a path to $dest.");
-        } else if (rawPath.length == 1) {
-          voiceAlerts.queueNotification(
-            "You are already at the ${dest.replaceAll('_', ' ')}.",
-          );
-        } else {
-          setState(() {
-            _activePath = rawPath;
-            _nextPathIndex = 1;
-            currentStatusText = "Navigating to $dest";
-          });
-          voiceAlerts.queueNotification(pathPlanner.routeEngine.getRouteSummary(rawPath));
-          final firstDistance = mapRepo.currentGraph?.getDistance(rawPath[0], rawPath[1]);
-          voiceAlerts.queueNotification(
-            pathPlanner.routeEngine.getInstructionForStep(rawPath[0], rawPath[1], firstDistance),
-          );
-        }
+      if (dest.isEmpty) { voiceAlerts.queueNotification("Destination not understood."); return; }
+      if (!positionTracker.hasPosition) { voiceAlerts.queueNotification("Scan a QR code first."); return; }
+      final rawPath = pathPlanner.findPath(positionTracker.currentNode!, dest);
+      if (rawPath.isEmpty) {
+        voiceAlerts.queueNotification("No path found to $dest.");
+      } else if (rawPath.length == 1) {
+        voiceAlerts.queueNotification("You are already at ${dest.replaceAll('_', ' ')}.");
       } else {
-        voiceAlerts.queueNotification("Current location unknown. Scan a QR anchor.");
+        setState(() { _activePath = rawPath; _nextPathIndex = 1; currentStatusText = "Navigating to $dest"; });
+        voiceAlerts.queueNotification(pathPlanner.routeEngine.getRouteSummary(rawPath));
+        final d = mapRepo.currentGraph?.getDistance(rawPath[0], rawPath[1]);
+        voiceAlerts.queueNotification(pathPlanner.routeEngine.getInstructionForStep(rawPath[0], rawPath[1], d));
       }
     } else if (result['intent'] == 'locate') {
-      if (positionTracker.hasPosition) {
-        voiceAlerts.queueNotification(
-          "You are near ${positionTracker.currentNode!.replaceAll('_', ' ')}.",
-        );
-      } else {
-        voiceAlerts.queueNotification("I am not sure where you are. Scan a nearby QR code.");
-      }
+      voiceAlerts.queueNotification(positionTracker.hasPosition
+        ? "You are near ${positionTracker.currentNode!.replaceAll('_', ' ')}."
+        : "Location unknown. Scan a QR code.");
     } else {
       voiceAlerts.queueNotification("Command not recognized.");
     }
@@ -277,49 +231,47 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          Positioned.fill(
-            child: CameraView(controller: cameraController),
-          ),
+          Positioned.fill(child: CameraView(controller: cameraController)),
+          // Top status bar
           Positioned(
-            top: 60,
-            left: 20,
-            right: 20,
+            top: 60, left: 20, right: 20,
             child: Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                color: Colors.black54,
+                color: Colors.black.withOpacity(0.7),
                 borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white24),
               ),
               child: Column(
                 children: [
-                  Text(
-                    currentStatusText,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 8),
-                  if (lastUserCommand.isNotEmpty)
-                    Text(
-                      "You said: $lastUserCommand",
-                      style: const TextStyle(color: Colors.white70),
-                    ),
+                  Text(currentStatusText,
+                    style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
+                    textAlign: TextAlign.center),
+                  if (lastUserCommand.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text('You said: "$lastUserCommand"',
+                      style: const TextStyle(color: Colors.white60, fontSize: 13)),
+                  ],
                 ],
               ),
             ),
           ),
-          Positioned(
-            bottom: 40,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: VoiceButton(
-                isListening: isListening,
-                onPressed: _onVoiceButtonPressed,
+          // QR scan crosshair
+          if (!mapRepo.hasMap)
+            Center(
+              child: Container(
+                width: 200, height: 200,
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.greenAccent, width: 2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
+            ),
+          // Voice button
+          Positioned(
+            bottom: 40, left: 0, right: 0,
+            child: Center(
+              child: VoiceButton(isListening: isListening, onPressed: _onVoiceButtonPressed),
             ),
           ),
         ],
