@@ -16,7 +16,7 @@ class CameraView extends StatelessWidget {
     return MobileScanner(
       controller: controller,
       onDetect: onDetect,
-      errorBuilder: (context, error, child) {
+      errorBuilder: (context, error, _) {
          return Center(
            child: Text("Camera error: ${error.errorCode}"),
          );
