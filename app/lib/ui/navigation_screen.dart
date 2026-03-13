@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:camera/camera.dart';
-import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../alerts/voice_notifications.dart';
 import '../alerts/warning_system.dart';
@@ -15,10 +14,6 @@ import '../voice/speech_to_text.dart';
 import '../voice/text_to_speech.dart';
 import '../voice/voice_command_handler.dart';
 
-import '../camera/frame_processor.dart';
-import '../camera/qr_detector.dart';
-import '../camera/yolo_detector.dart';
-import 'camera_view.dart';
 import 'voice_button.dart';
 
 class MainNavigationScreen extends StatefulWidget {
@@ -50,12 +45,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   List<String>? _activePath;
   int _nextPathIndex = 0;
 
-  // Camera
-  CameraController? cameraController;
-  late FrameProcessorPipeline frameProcessor;
-  late YoloDetector yoloDetector;
-  late QRDetector qrDetector;
-  bool _isProcessingFrame = false;
+  // QR Scanner
+  MobileScannerController? scannerController;
 
   @override
   void initState() {
@@ -85,68 +76,27 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     final routeEngine = RouteEngine();
     pathPlanner = PathPlanner(aStar: aStar, routeEngine: routeEngine);
 
-    // 4. Camera & AI
-    yoloDetector = YoloDetector();
-    await yoloDetector.loadModel();
-    qrDetector = QRDetector();
-    frameProcessor = FrameProcessorPipeline(
-      qrDetector: qrDetector,
-      yoloDetector: yoloDetector,
+    // 4. QR Scanner
+    scannerController = MobileScannerController(
+      detectionSpeed: DetectionSpeed.normal,
+      facing: CameraFacing.back,
     );
-    await _initializeCamera();
 
     // Welcome Message
     voiceAlerts.queueNotification("Welcome. Please scan a building Entrance QR code to load the map.");
+    setState(() {});
   }
 
-  Future<void> _initializeCamera() async {
-    final cameras = await availableCameras();
-    if (cameras.isEmpty) return;
-
-    cameraController = CameraController(
-      cameras[0],
-      ResolutionPreset.medium,
-      enableAudio: false,
-    );
-
-    try {
-      await cameraController!.initialize();
-      
-      // Get rotation once or periodically
-      final rotation = _rotationFromSensor(cameras[0]);
-
-      cameraController!.startImageStream((image) {
-        if (_isProcessingFrame) return;
-        _isProcessingFrame = true;
-        
-        try {
-          frameProcessor.processNewFrame(
-            image, 
-            rotation,
-            (obstacles) => warningSystem.processDetectedObstacles(obstacles),
-            (qr) {
-               print("UI: QR Recognized: $qr");
-               _handleQRResult(qr);
-            }
-          ).then((_) {
-             _isProcessingFrame = false;
-          }).catchError((e) {
-             print("Pipeline Error: $e");
-             _isProcessingFrame = false;
-          });
-        } catch (e) {
-          print("Stream Error: $e");
-          _isProcessingFrame = false;
-        }
-      });
-      setState(() {});
-    } catch (e) {
-      print("Camera initialization error: $e");
+  void _onQRDetected(BarcodeCapture capture) {
+    final List<Barcode> barcodes = capture.barcodes;
+    for (final barcode in barcodes) {
+      if (barcode.rawValue != null) {
+        _handleQRResult(barcode.rawValue!);
+      }
     }
   }
 
   void _handleQRResult(String qrValue) async {
-      print("UI: Handling QR Result: $qrValue");
       if (!mapRepo.hasMap) {
         // Initial map loading
         if (qrValue.contains("BUILDING")) {
@@ -200,19 +150,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             }
         }
       }
-  }
-
-  InputImageRotation _rotationFromSensor(CameraDescription camera) {
-    switch (camera.sensorOrientation) {
-      case 90:
-        return InputImageRotation.rotation90deg;
-      case 180:
-        return InputImageRotation.rotation180deg;
-      case 270:
-        return InputImageRotation.rotation270deg;
-      default:
-        return InputImageRotation.rotation0deg;
-    }
   }
 
   void _onVoiceButtonPressed() {
@@ -280,8 +217,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   @override
   void dispose() {
-    cameraController?.dispose();
-    qrDetector.dispose();
+    scannerController?.dispose();
     ttsWrapper.stop();
     sttWrapper.stopListening();
     super.dispose();
@@ -293,11 +229,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // Background Camera View
+          // Background Camera/Scanner View
           Positioned.fill(
-            child: CameraView(
-              controller: cameraController,
-            ),
+            child: scannerController != null
+              ? MobileScanner(
+                  controller: scannerController!,
+                  onDetect: _onQRDetected,
+                )
+              : const Center(child: CircularProgressIndicator()),
           ),
           
           // Debug / Status Info Layer
