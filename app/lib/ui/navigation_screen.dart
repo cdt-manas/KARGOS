@@ -16,6 +16,7 @@ import '../voice/text_to_speech.dart';
 import '../voice/voice_command_handler.dart';
 
 import '../camera/qr_detector.dart';
+import '../camera/yolo_detector.dart';
 import 'camera_view.dart';
 import 'voice_button.dart';
 
@@ -48,6 +49,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   CameraController? cameraController;
   late QRDetector qrDetector;
+  late YoloDetector yoloDetector;
 
   bool _isProcessing = false;
   int _frameCount = 0;
@@ -76,6 +78,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     pathPlanner = PathPlanner(aStar: aStar, routeEngine: RouteEngine());
 
     qrDetector = QRDetector();
+    yoloDetector = YoloDetector();
+    await yoloDetector.loadModel();
 
     await _initCamera();
 
@@ -105,13 +109,18 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       if (_isProcessing) return;
       _isProcessing = true;
 
-      qrDetector.processFrame(image, rotation, (qr) {
-        // Debounce: only handle if QR value changed
-        if (qr != _lastQRSeen) {
-          _lastQRSeen = qr;
-          _handleQRResult(qr);
-        }
-      }).then((_) {
+      Future.wait([
+        // QR every 5 frames
+        if (_frameCount % 5 == 0)
+          qrDetector.processFrame(image, rotation, (qr) {
+            if (qr != _lastQRSeen) { _lastQRSeen = qr; _handleQRResult(qr); }
+          }),
+        // YOLO every 25 frames
+        if (_frameCount % 25 == 0)
+          yoloDetector.detectObstacles(image).then((obstacles) {
+            if (obstacles.isNotEmpty) warningSystem.processDetectedObstacles(obstacles);
+          }),
+      ]).then((_) {
         _isProcessing = false;
       }).catchError((_) {
         _isProcessing = false;
