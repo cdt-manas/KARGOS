@@ -40,6 +40,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   bool isListening = false;
   String currentStatusText = "Scanning for Building Entrance QR...";
   String lastUserCommand = "";
+  String? _lastAnnouncedNode;
 
   // Camera
   final MobileScannerController scannerController = MobileScannerController(
@@ -92,15 +93,24 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           
           if (mapRepo.hasMap) {
              positionTracker.updatePosition("Entrance"); // default assumption for hackathon
+             _lastAnnouncedNode = "Entrance";
              setState(() => currentStatusText = "Map Loaded. Current Location: Entrance.");
-             voiceAlerts.queueNotification("Map loaded. You are at the Entrance. Press the mic and say 'Navigate me to Library'");
+             voiceAlerts.queueNotification("Map loaded. You are at the Entrance. Press the button and tell the desired place you want to go.");
           }
         }
       } else {
         // Continuous Localization
         qrManager.processQRData(rawValue);
-        if (positionTracker.currentNode != null) {
-            setState(() => currentStatusText = "Location: ${positionTracker.currentNode}");
+        final currentNode = positionTracker.currentNode;
+        if (currentNode != null) {
+            setState(() {
+               currentStatusText = "Location: ${currentNode.replaceAll('_', ' ')}";
+            });
+            
+            if (currentNode != _lastAnnouncedNode) {
+               _lastAnnouncedNode = currentNode;
+               voiceAlerts.queueNotification("You have reached ${currentNode.replaceAll('_', ' ')}.");
+            }
         }
       }
     }
