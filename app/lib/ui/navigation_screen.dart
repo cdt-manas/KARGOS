@@ -3,7 +3,6 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../alerts/voice_notifications.dart';
 import '../alerts/warning_system.dart';
-import '../camera/frame_processor.dart';
 import '../localization/position_tracker.dart';
 import '../localization/qr_anchor_manager.dart';
 import '../maps/indoor_map_loader.dart';
