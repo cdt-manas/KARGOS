@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="accessibility_service_description">Allows KARGOS to detect triple Volume Up press to quickly launch indoor navigation, even when the app is closed. This helps visually impaired users open the app without needing to find it on screen.</string>
+</resources>
