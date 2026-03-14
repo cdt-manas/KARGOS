@@ -288,7 +288,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     } else if (result['intent'] == 'repeat') {
       _repeatNavigationInstructions();
     } else if (result['intent'] == 'emergency') {
-      voiceAlerts.queueNotification("Emergency mode activated. Initiating safety protocol.");
+      voiceAlerts.queueNotification("Emergency mode activated. Initiating safety protocol and calling Manas.");
       emergencyService.triggerEmergency();
       setState(() {
         currentStatusText = "🚨 EMERGENCY MODE 🚨";
