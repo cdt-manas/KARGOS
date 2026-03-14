@@ -25,10 +25,11 @@
 | 🗺️ **QR-Based Localization** | Scans QR codes placed at key indoor locations to determine the user's position on the building map |
 | 🧠 **YOLOv8 Obstacle Detection** | Detects 80+ object categories (people, chairs, tables, bottles, etc.) in real-time using on-device AI |
 | 🗣️ **Voice Navigation** | Provides spoken turn-by-turn directions with step counting ("Turn left, then walk 5 steps") |
-| 🎤 **Voice Commands** | Users can say destinations like *"Take me to the Library"* or *"Please repeat"* |
+| 🚨 **Emergency Mode** | Say *"EMERGENCY"* to sound a siren and directly call Manas (+91 9835709105) |
+| ⚡ **Triple-Press Launch** | Triple-press **Volume Up** anyway to launch the app instantly via Accessibility Service |
+| 🎤 **Voice Commands** | Users can say destinations like *"Take me to the Library"* or ask to *"Please repeat"* |
 | 🏃 **Step Detection** | Counts steps using the device's accelerometer for precise distance tracking |
-| ⚡ **Motion-Triggered AI** | Lightweight motion detection triggers full YOLO inference only when movement is detected, saving battery |
-| 🔊 **Smart Warnings** | Announces obstacles with cooldown to avoid repetitive alerts ("Chair ahead. Please be careful.") |
+| 🛡️ **Two-Tier Safety** | Motion-sensing triggers YOLOv8 AI only on movement, optimizing battery and safety |
 
 ---
 
@@ -104,6 +105,8 @@ flutter run -d <device-id>
 The app will request the following permissions on first launch:
 - 📷 **Camera** — For QR scanning and obstacle detection
 - 🎤 **Microphone** — For voice command input
+- 📍 **Location** — To append GPS coordinates to safety protocols (optional)
+- 📞 **Phone** — Required to initiate the emergency call to Manas
 - 🔊 **Audio** — For spoken navigation instructions
 
 ---
@@ -124,8 +127,10 @@ The app will request the following permissions on first launch:
 |---|---|
 | *"Take me to the Library"* | Starts navigation to the Library |
 | *"Navigate to Laboratory"* | Starts navigation to the Laboratory |
-| *"Take me to Washroom"* | Starts navigation to the Washroom |
-| *"Please repeat"* | Re-announces the last navigation instruction |
+| *"Take me to Washroom"*| Starts navigation to the Washroom |
+| *"Please repeat"*     | Re-announces route summary and instructions |
+| *"EMERGENCY"*         | **SOS**: Triggers alarm and calls Manas |
+| *"stop alarm"*        | Stops the siren once safety is reached |
 
 ### Supported Locations (Demo)
 
@@ -153,8 +158,14 @@ The app will request the following permissions on first launch:
 - Triggered every 40th frame, or immediately on motion detection
 
 ### Two-Tier Safety System
-1. **Tier 1 — Motion Detection:** Lightweight frame differencing detects movement, triggering YOLO
-2. **Tier 2 — YOLO Object Detection:** Full AI inference identifies specific obstacles and warns the user
+1. **Tier 1 — Motion Detection:** Lightweight frame differencing detects movement, triggering YOLO.
+2. **Tier 2 — YOLO Object Detection:** Full AI inference identifies specific obstacles (People, Furniture, etc.) and warns the user.
+
+### 🛡️ SOS & Emergency Protocol
+- **Panic Command**: Triggered by voice or through the app interface.
+- **Siren**: Plays a high-frequency looped `siren.mp3` to alert people nearby.
+- **Direct Call**: Instantly initiates a phone call to the emergency contact (**Manas**) using the device's system dialer.
+- **Always-Ready**: The Accessibility Service monitors hardware buttons 24/7 to ensure the app is never more than a few clicks away.
 
 ---
 
