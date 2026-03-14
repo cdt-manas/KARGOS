@@ -15,6 +15,7 @@ import '../navigation/route_engine.dart';
 import '../voice/speech_to_text.dart';
 import '../voice/text_to_speech.dart';
 import '../voice/voice_command_handler.dart';
+import '../utils/emergency_service.dart';
 
 import '../camera/qr_detector.dart';
 import '../camera/yolo_detector.dart';
@@ -39,6 +40,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   late PositionTracker positionTracker;
   late QRAnchorManager qrManager;
   late PathPlanner pathPlanner;
+  late EmergencyService emergencyService;
 
   bool isListening = false;
   String currentStatusText = "Point camera at Building Entrance QR code...";
@@ -80,6 +82,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
     final aStar = AStarAlgorithm(mapRepository: mapRepo);
     pathPlanner = PathPlanner(aStar: aStar, routeEngine: RouteEngine());
+    emergencyService = EmergencyService();
 
     // 2. Complex async initializations
     try {
@@ -284,6 +287,18 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         : "Location unknown. Scan a QR code.");
     } else if (result['intent'] == 'repeat') {
       _repeatNavigationInstructions();
+    } else if (result['intent'] == 'emergency') {
+      voiceAlerts.queueNotification("Emergency mode activated. Initiating safety protocol.");
+      emergencyService.triggerEmergency();
+      setState(() {
+        currentStatusText = "🚨 EMERGENCY MODE 🚨";
+      });
+    } else if (result['intent'] == 'stop_alarm') {
+      emergencyService.stopAlarm();
+      voiceAlerts.queueNotification("Emergency alarm stopped.");
+      setState(() {
+        currentStatusText = "Alarm stopped.";
+      });
     } else {
       voiceAlerts.queueNotification("Command not recognized.");
     }

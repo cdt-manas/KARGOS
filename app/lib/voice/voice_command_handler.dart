@@ -12,6 +12,10 @@ class VoiceCommandHandler {
       return {'intent': 'locate'};
     } else if (lower.contains("repeat")) {
       return {'intent': 'repeat'};
+    } else if (lower.contains("emergency") || lower.contains("help")) {
+      return {'intent': 'emergency'};
+    } else if (lower.contains("stop alarm")) {
+      return {'intent': 'stop_alarm'};
     }
     
     return {'intent': 'unknown'};
