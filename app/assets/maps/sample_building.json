@@ -4,14 +4,18 @@
     "Corridor_A",
     "Corridor_B",
     "Library",
+    "Laboratory",
     "Washroom",
+    "Lavatory",
     "Stairs"
   ],
   "edges": [
-    ["Entrance", "Corridor_A", 10],
-    ["Corridor_A", "Corridor_B", 7],
-    ["Corridor_B", "Library", 5],
-    ["Corridor_B", "Washroom", 4],
-    ["Entrance", "Stairs", 12]
+    ["Entrance", "Corridor_A", 10, "straight"],
+    ["Corridor_A", "Corridor_B", 7, "left"],
+    ["Corridor_A", "Lavatory", 5, "right"],
+    ["Corridor_B", "Library", 5, "right"],
+    ["Corridor_B", "Laboratory", 8, "straight"],
+    ["Corridor_B", "Washroom", 4, "left"],
+    ["Entrance", "Stairs", 12, "right"]
   ]
 }

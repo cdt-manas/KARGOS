@@ -28,7 +28,7 @@ class FrameProcessorPipeline {
 
     // YOLO every 15 frames (heavy lifting)
     if (_frameCount % 15 == 0) {
-       List<String> obstacles = await yoloDetector.detectObstacles(frame);
+       List<String> obstacles = await yoloDetector.detectObstacles(frame, rotation);
        if (obstacles.isNotEmpty) {
          onObstacleDetected(obstacles);
        }

@@ -2,14 +2,21 @@ class Edge {
   final String from;
   final String to;
   final double distance;
+  final String direction;
 
-  Edge({required this.from, required this.to, required this.distance});
+  Edge({
+    required this.from,
+    required this.to,
+    required this.distance,
+    required this.direction,
+  });
 
   factory Edge.fromJson(List<dynamic> json) {
     return Edge(
       from: json[0] as String,
       to: json[1] as String,
       distance: (json[2] as num).toDouble(),
+      direction: json.length > 3 ? json[3] as String : "straight",
     );
   }
 }
@@ -24,12 +31,21 @@ class GraphModel {
       adjacencyList[node] = [];
     }
     for (var edge in edges) {
-      // Assuming undirected graph for indoor walking
+      // Add forward edge
       adjacencyList[edge.from]?.add(edge);
+      // Add reciprocal edge with inverse direction
+      String inverseDir = "straight";
+      if (edge.direction == "left") {
+        inverseDir = "right";
+      } else if (edge.direction == "right") {
+        inverseDir = "left";
+      }
+
       adjacencyList[edge.to]?.add(Edge(
         from: edge.to,
         to: edge.from,
         distance: edge.distance,
+        direction: inverseDir,
       ));
     }
   }
@@ -50,5 +66,13 @@ class GraphModel {
       if (edge.to == to) return edge.distance;
     }
     return null;
+  }
+
+  String getDirection(String from, String to) {
+    if (!adjacencyList.containsKey(from)) return "straight";
+    for (var edge in adjacencyList[from]!) {
+      if (edge.to == to) return edge.direction;
+    }
+    return "straight";
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
+import 'dart:typed_data';
 import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart';
 
 import '../alerts/voice_notifications.dart';
@@ -17,6 +18,7 @@ import '../voice/voice_command_handler.dart';
 
 import '../camera/qr_detector.dart';
 import '../camera/yolo_detector.dart';
+import '../camera/step_detector.dart';
 import 'camera_view.dart';
 import 'voice_button.dart';
 
@@ -50,9 +52,15 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   CameraController? cameraController;
   late QRDetector qrDetector;
   late YoloDetector yoloDetector;
+  late StepDetector stepDetector;
 
+  int _remainingStepsToNextNode = 0;
+  DateTime _lastStepAnnouncement = DateTime.now();
   bool _isProcessing = false;
+  bool _isInitialized = false;
   int _frameCount = 0;
+  Uint8List? _lastLuminance;
+  bool _forceYolo = false;
 
   @override
   void initState() {
@@ -61,31 +69,45 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 
   Future<void> _initializeServices() async {
-    ttsWrapper = TTSWrapper();
-    await ttsWrapper.init();
-    sttWrapper = STTWrapper();
-    await sttWrapper.init();
-    voiceAlerts = VoiceNotifications(tts: ttsWrapper);
-    commandHandler = VoiceCommandHandler();
-    warningSystem = WarningSystem(notifications: voiceAlerts);
-
+    // 1. Initialize synchronous services immediately to avoid LateInitializationError
     mapRepo = MapRepository();
     mapLoader = IndoorMapLoader(repository: mapRepo);
     positionTracker = PositionTracker();
     qrManager = QRAnchorManager(mapRepository: mapRepo, positionTracker: positionTracker);
+    qrDetector = QRDetector();
+    yoloDetector = YoloDetector();
+    stepDetector = StepDetector(onStep: _onStepDetected);
 
     final aStar = AStarAlgorithm(mapRepository: mapRepo);
     pathPlanner = PathPlanner(aStar: aStar, routeEngine: RouteEngine());
 
-    qrDetector = QRDetector();
-    yoloDetector = YoloDetector();
-    await yoloDetector.loadModel();
+    // 2. Complex async initializations
+    try {
+      ttsWrapper = TTSWrapper();
+      await ttsWrapper.init();
+      sttWrapper = STTWrapper();
+      await sttWrapper.init();
+      voiceAlerts = VoiceNotifications(tts: ttsWrapper);
+      commandHandler = VoiceCommandHandler();
+      warningSystem = WarningSystem(notifications: voiceAlerts);
 
-    await _initCamera();
+      await yoloDetector.loadModel();
+      await _initCamera();
+      stepDetector.start();
 
-    voiceAlerts.queueNotification(
-      "Welcome. Please scan the building entrance Q R code to begin.",
-    );
+      setState(() {
+        _isInitialized = true;
+      });
+
+      voiceAlerts.queueNotification(
+        "Welcome. Please scan the building entrance Q R code to begin.",
+      );
+    } catch (e) {
+      print("Initialization error: $e");
+      setState(() {
+        currentStatusText = "Error initializing services: $e";
+      });
+    }
   }
 
   Future<void> _initCamera() async {
@@ -102,32 +124,64 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     await cameraController!.initialize();
     final rotation = _rotationFromSensor(cameras[0]);
 
+    DateTime lastFrameWithQR = DateTime.now();
+
     cameraController!.startImageStream((image) {
       _frameCount++;
-      // Only run QR every 5th frame
-      if (_frameCount % 5 != 0) return;
-      if (_isProcessing) return;
-      _isProcessing = true;
+      
+      // Throttle heavily to avoid lag at medium resolution
+      if (_frameCount % 10 == 0) _detectMotion(image);
 
-      Future.wait([
-        // QR every 5 frames
-        if (_frameCount % 5 == 0)
-          qrDetector.processFrame(image, rotation, (qr) {
-            if (qr != _lastQRSeen) { _lastQRSeen = qr; _handleQRResult(qr); }
-          }),
-        // YOLO every 25 frames
-        if (_frameCount % 25 == 0)
-          yoloDetector.detectObstacles(image).then((obstacles) {
-            if (obstacles.isNotEmpty) warningSystem.processDetectedObstacles(obstacles);
-          }),
-      ]).then((_) {
-        _isProcessing = false;
-      }).catchError((_) {
-        _isProcessing = false;
-      });
+      if (_isProcessing) return;
+
+      if (_frameCount % 40 == 0 || _forceYolo) {
+        _isProcessing = true;
+        _forceYolo = false;
+        yoloDetector.detectObstacles(image, rotation).then((obstacles) {
+          if (obstacles.isNotEmpty) warningSystem.processDetectedObstacles(obstacles);
+        }).catchError((e) {
+          print("YOLO Error: $e");
+        }).whenComplete(() => _isProcessing = false);
+      } else if (_frameCount % 15 == 0) {
+        _isProcessing = true;
+        qrDetector.processFrame(image, rotation, (qr) {
+          if (qr.isNotEmpty) {
+            print("QR Scanned: $qr"); // Add debug log
+            lastFrameWithQR = DateTime.now();
+            if (qr != _lastQRSeen) {
+              _lastQRSeen = qr;
+              _handleQRResult(qr);
+            }
+          } else {
+            if (DateTime.now().difference(lastFrameWithQR).inSeconds > 5) {
+               _lastQRSeen = "";
+            }
+          }
+        }).catchError((e) {
+          print("QR Error: $e");
+        }).whenComplete(() => _isProcessing = false);
+      }
     });
 
     setState(() {});
+  }
+
+  void _onStepDetected() {
+    if (_activePath != null && _remainingStepsToNextNode > 0) {
+      setState(() {
+        _remainingStepsToNextNode--;
+        currentStatusText = "Walk to ${_activePath![_nextPathIndex].replaceAll('_', ' ')}: $_remainingStepsToNextNode steps more";
+      });
+
+      // Announce every step if it's <= 10, otherwise every few steps
+      if (_remainingStepsToNextNode <= 10 || _remainingStepsToNextNode % 5 == 0) {
+        final now = DateTime.now();
+        if (now.difference(_lastStepAnnouncement).inMilliseconds > 1500) {
+           voiceAlerts.queueNotification(pathPlanner.routeEngine.getStepCountdownInstruction(_remainingStepsToNextNode));
+           _lastStepAnnouncement = now;
+        }
+      }
+    }
   }
 
   InputImageRotation _rotationFromSensor(CameraDescription camera) {
@@ -170,10 +224,13 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               if (_nextPathIndex < _activePath!.length) {
                 final nextNode = _activePath![_nextPathIndex];
                 final distance = mapRepo.currentGraph?.getDistance(currentNode, nextNode);
+                final direction = mapRepo.currentGraph?.getDirection(currentNode, nextNode) ?? "straight";
+                _remainingStepsToNextNode = distance?.toInt() ?? 0;
                 voiceAlerts.queueNotification(
-                  pathPlanner.routeEngine.getInstructionForStep(currentNode, nextNode, distance),
+                  pathPlanner.routeEngine.getInstructionForStep(currentNode, nextNode, distance, direction),
                 );
               } else {
+                _remainingStepsToNextNode = 0;
                 voiceAlerts.queueNotification("You have reached your destination.");
                 setState(() => currentStatusText = "Destination reached!");
                 _activePath = null;
@@ -210,18 +267,72 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       } else if (rawPath.length == 1) {
         voiceAlerts.queueNotification("You are already at ${dest.replaceAll('_', ' ')}.");
       } else {
-        setState(() { _activePath = rawPath; _nextPathIndex = 1; currentStatusText = "Navigating to $dest"; });
-        voiceAlerts.queueNotification(pathPlanner.routeEngine.getRouteSummary(rawPath));
-        final d = mapRepo.currentGraph?.getDistance(rawPath[0], rawPath[1]);
-        voiceAlerts.queueNotification(pathPlanner.routeEngine.getInstructionForStep(rawPath[0], rawPath[1], d));
+        setState(() {
+          _activePath = rawPath;
+          _nextPathIndex = 1;
+          final d = mapRepo.currentGraph?.getDistance(rawPath[0], rawPath[1]);
+          final dir = mapRepo.currentGraph?.getDirection(rawPath[0], rawPath[1]) ?? "straight";
+          _remainingStepsToNextNode = d?.toInt() ?? 0;
+          currentStatusText = "Navigating to $dest";
+          voiceAlerts.queueNotification(pathPlanner.routeEngine.getRouteSummary(rawPath));
+          voiceAlerts.queueNotification(pathPlanner.routeEngine.getInstructionForStep(rawPath[0], rawPath[1], d, dir));
+        });
       }
     } else if (result['intent'] == 'locate') {
       voiceAlerts.queueNotification(positionTracker.hasPosition
         ? "You are near ${positionTracker.currentNode!.replaceAll('_', ' ')}."
         : "Location unknown. Scan a QR code.");
+    } else if (result['intent'] == 'repeat') {
+      _repeatNavigationInstructions();
     } else {
       voiceAlerts.queueNotification("Command not recognized.");
     }
+  }
+
+  void _repeatNavigationInstructions() {
+    if (_activePath == null) {
+      voiceAlerts.queueNotification("No active navigation to repeat.");
+      return;
+    }
+    
+    // 1. Repeat full route summary
+    voiceAlerts.queueNotification(pathPlanner.routeEngine.getRouteSummary(_activePath!));
+    
+    // 2. Repeat current step instructions
+    if (_nextPathIndex < _activePath!.length) {
+      final current = _activePath![_nextPathIndex - 1];
+      final next = _activePath![_nextPathIndex];
+      final distance = mapRepo.currentGraph?.getDistance(current, next);
+      final direction = mapRepo.currentGraph?.getDirection(current, next) ?? "straight";
+      
+      voiceAlerts.queueNotification("From your current location: ${pathPlanner.routeEngine.getInstructionForStep(current, next, distance, direction)}");
+    }
+  }
+
+  void _detectMotion(CameraImage image) {
+    if (image.planes.isEmpty) return;
+    final yBuffer = image.planes[0].bytes;
+    
+    if (_lastLuminance == null || _lastLuminance!.length != yBuffer.length) {
+      _lastLuminance = Uint8List(yBuffer.length);
+      _lastLuminance!.setAll(0, yBuffer);
+      return;
+    }
+
+    int diffCount = 0;
+    const int step = 200; // Efficient sampling
+    for (int i = 0; i < yBuffer.length; i += step) {
+      if ((yBuffer[i] - _lastLuminance![i]).abs() > 45) {
+        diffCount++;
+      }
+    }
+
+    if (diffCount > 15) {
+      _forceYolo = true;
+    }
+
+    // Efficiently update last frame without new allocation
+    _lastLuminance!.setAll(0, yBuffer);
   }
 
   @override
@@ -229,6 +340,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     cameraController?.stopImageStream();
     cameraController?.dispose();
     qrDetector.dispose();
+    stepDetector.stop();
     ttsWrapper.stop();
     sttWrapper.stopListening();
     super.dispose();
@@ -236,6 +348,22 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_isInitialized) {
+      return const Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(color: Colors.white),
+              SizedBox(height: 20),
+              Text("Starting KARGOS...", style: TextStyle(color: Colors.white)),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(

@@ -13,9 +13,16 @@ class RouteEngine {
   }
 
   /// Returns a specific instruction for moving from current node to the next in the path
-  String getInstructionForStep(String current, String next, [double? distance]) {
+  String getInstructionForStep(String current, String next, [double? distance, String direction = "straight"]) {
     String distanceStr = distance != null ? " for ${distance.toInt()} steps" : "";
-    return "Walk straight towards ${next.replaceAll('_', ' ')}$distanceStr.";
+    String action = direction == "straight" ? "Walk straight" : "Turn $direction";
+    return "$action and walk towards ${next.replaceAll('_', ' ')}$distanceStr.";
+  }
+
+  /// Returns the countdown instruction like "10 steps more"
+  String getStepCountdownInstruction(int remainingSteps) {
+    if (remainingSteps <= 0) return "";
+    return "$remainingSteps steps more.";
   }
 
   /// Original method maintained for backward compatibility if needed, but improved phrasing

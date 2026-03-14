@@ -15,16 +15,28 @@ class QRAnchorManager {
   void processQRData(String qrString) {
     if (!mapRepository.hasMap) return;
 
-    // Example Mapping: QR code text is "QR_02" which correlates to "Corridor_A" Node.
-    // For Hackathon prototype, we can assume QR text structurally embodies the Node Name itself for simplicity,
-    // ie: QR format contains "NODE:Corridor_A"
+    String normalizedQR = qrString.trim().toUpperCase();
+    String nodeCandidate = "";
+
+    // Specific Demo ID Mapping
+    if (normalizedQR == "QR_LIB") {
+      nodeCandidate = "Library";
+    } else if (normalizedQR == "QR_WR") {
+      nodeCandidate = "Washroom";
+    } else if (normalizedQR == "QR_LAV") {
+      nodeCandidate = "Lavatory";
+    } else if (normalizedQR == "QR_LAB") {
+      nodeCandidate = "Laboratory";
+    } else if (normalizedQR.startsWith("NODE:")) {
+      nodeCandidate = qrString.split(":")[1];
+    } else {
+      nodeCandidate = qrString; // Fallback to direct name
+    }
     
-    if (qrString.startsWith("NODE:")) {
-      String nodeName = qrString.split(":")[1];
-      if (mapRepository.currentGraph!.isValidNode(nodeName)) {
-        positionTracker.updatePosition(nodeName);
-        print("Position updated to: $nodeName");
-      }
+    // Check if it's a valid node directly
+    if (mapRepository.currentGraph!.isValidNode(nodeCandidate)) {
+       positionTracker.updatePosition(nodeCandidate);
+       print("Position updated to: $nodeCandidate");
     }
   }
 }

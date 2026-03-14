@@ -10,6 +10,8 @@ class VoiceCommandHandler {
       return {'intent': 'navigate', 'destination': dest};
     } else if (lower.contains("where am i")) {
       return {'intent': 'locate'};
+    } else if (lower.contains("repeat")) {
+      return {'intent': 'repeat'};
     }
     
     return {'intent': 'unknown'};
@@ -22,6 +24,9 @@ class VoiceCommandHandler {
     if (lower.contains("corridor a")) return "Corridor_A";
     if (lower.contains("corridor b")) return "Corridor_B";
     if (lower.contains("stairs")) return "Stairs";
+    if (lower.contains("washroom")) return "Washroom";
+    if (lower.contains("lavatory")) return "Lavatory";
+    if (lower.contains("laboratory")) return "Laboratory";
 
     return "";
   }
