@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">🧭 KARGOS — AI-Powered Indoor Navigation</h1>
+  <h1 align="center">🧭 DrishtiPath — AI-Powered Indoor Navigation</h1>
   <p align="center">
     <em>Voice-guided, obstacle-aware indoor navigation for visually impaired users</em>
   </p>
@@ -16,7 +16,7 @@
 
 ## 📖 Overview
 
-**KARGOS** is a real-time AI indoor navigation system built with Flutter. It uses QR code-based localization, YOLOv8 object detection for obstacle avoidance, and voice-guided turn-by-turn navigation to help visually impaired users navigate indoor spaces safely and independently.
+**DrishtiPath** is a real-time AI indoor navigation system built with Flutter. It uses QR code-based localization, YOLOv8 object detection for obstacle avoidance, and voice-guided turn-by-turn navigation to help visually impaired users navigate indoor spaces safely and independently.
 
 ### ✨ Key Features
 
@@ -37,7 +37,7 @@
 
 ```
 ┌─────────────────────────────────────────────────┐
-│                    KARGOS App                    │
+│                 DrishtiPath App                  │
 ├──────────┬──────────┬──────────┬────────────────┤
 │  Camera  │  Voice   │   Maps   │  Navigation    │
 │  Module  │  Module  │  Module  │    Engine       │
@@ -52,7 +52,7 @@
 ### 📁 Project Structure
 
 ```
-KARGOS/
+DrishtiPath/
 ├── app/
 │   ├── lib/
 │   │   ├── camera/           # QR detector, YOLO detector, step detector, frame processor
@@ -87,8 +87,8 @@ KARGOS/
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/cdt-manas/KARGOS.git
-cd KARGOS
+git clone https://github.com/cdt-manas/DrishtiPath.git
+cd DrishtiPath
 
 # 2. Install Flutter dependencies
 cd app

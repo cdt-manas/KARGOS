@@ -372,7 +372,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             children: [
               CircularProgressIndicator(color: Colors.white),
               SizedBox(height: 20),
-              Text("Starting KARGOS...", style: TextStyle(color: Colors.white)),
+              Text("Starting DrishtiPath...", style: TextStyle(color: Colors.white)),
             ],
           ),
         ),
